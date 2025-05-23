@@ -1,0 +1,188 @@
+To effectively evaluate and enhance Qualcomm's AI chatbot for Verilog code generation, it's crucial to design prompts that expose its limitations and assess its strengths. Here's a structured approach to identify potential flaws and areas for improvement:
+
+---
+
+## 🧠 1. Functional Correctness & Logic Integrity
+
+**Prompt Example:**
+
+> *"Design a parameterized N-bit asynchronous FIFO with Gray-code pointers, including full and empty flag logic."*
+
+**What to Evaluate:**
+
+* **Pointer Logic:** Are the read/write pointers correctly implemented using Gray-code?
+* **Clock Domain Crossing:** Is synchronization between different clock domains handled appropriately?
+* **Flag Accuracy:** Do the full and empty flags accurately reflect the FIFO status under various conditions?([arXiv][1])
+
+**Potential Issues:**
+
+* Incorrect pointer arithmetic leading to data corruption.
+* Improper synchronization causing metastability.
+* Flags not updating correctly, leading to overflow or underflow.
+
+**Improvement Suggestions:**
+
+* Incorporate formal verification techniques to validate pointer logic.
+* Use synchronizer flip-flops for clock domain crossing.
+* Implement assertions to monitor flag behavior during simulation.
+
+---
+
+## 🎨 2. Coding Style & Readability
+
+**Prompt Example:**
+
+> *"Refactor the following Verilog code to eliminate inferred latches, use consistent indentation, and add meaningful comments."*
+
+**What to Evaluate:**
+
+* **Latch Inference:** Are all combinational processes complete to prevent unintended latches?
+* **Indentation & Formatting:** Is the code consistently formatted for readability?
+* **Comments:** Do comments explain the purpose and functionality of code blocks?
+
+**Potential Issues:**
+
+* Incomplete `case` or `if-else` statements leading to latch inference.
+* Inconsistent indentation making the code hard to read.
+* Lack of comments or comments that merely restate code.
+
+**Improvement Suggestions:**
+
+* Ensure all control structures cover all possible conditions.
+* Adopt a standard coding style guide for formatting.
+* Encourage descriptive comments that provide insight into design decisions.
+
+---
+
+## 🧪 3. Verification & Testbench Quality
+
+**Prompt Example:**
+
+> *"Generate a SystemVerilog UVM testbench for a dual-port RAM, including coverage metrics and back-pressure scenarios."*
+
+**What to Evaluate:**
+
+* **Testbench Structure:** Is the testbench modular and reusable?
+* **Coverage:** Are functional and code coverage metrics implemented?
+* **Stress Testing:** Does the testbench include scenarios like simultaneous read/write and back-pressure?
+
+**Potential Issues:**
+
+* Monolithic testbenches that are hard to maintain.
+* Lack of coverage metrics leading to untested scenarios.
+* Testbenches that don't simulate real-world stress conditions.
+
+**Improvement Suggestions:**
+
+* Adopt UVM methodology for scalable testbench architecture.
+* Implement comprehensive coverage models.
+* Include randomized and edge-case scenarios in testing.
+
+---
+
+## ⚙️ 4. Performance & Resource Optimization
+
+**Prompt Example:**
+
+> *"Optimize this FIR filter design to minimize DSP slice usage and meet a 200 MHz clock frequency on a 28nm process."*
+
+**What to Evaluate:**
+
+* **Resource Utilization:** Are DSP slices and logic elements used efficiently?
+* **Timing Performance:** Does the design meet the specified clock frequency?
+* **Power Consumption:** Are there provisions for power optimization, like clock gating?
+
+**Potential Issues:**
+
+* Overuse of resources leading to area inefficiency.
+* Design failing to meet timing requirements.
+* High power consumption due to lack of optimization.
+
+**Improvement Suggestions:**
+
+* Implement resource sharing and pipelining where appropriate.
+* Use timing analysis tools to identify and fix critical paths.
+* Incorporate power-saving techniques such as clock gating.
+
+---
+
+## 🧱 5. Structural & Hierarchical Design
+
+**Prompt Example:**
+
+> *"Create a modular design for a pipelined CPU, including separate modules for fetch, decode, execute, memory, and write-back stages."*
+
+**What to Evaluate:**
+
+* **Modularity:** Are different functionalities encapsulated in separate modules?
+* **Hierarchy:** Is there a clear hierarchy and interconnection between modules?
+* **Reusability:** Can modules be reused or parameterized for different configurations?([reddit.com][2], [reddit.com][3])
+
+**Potential Issues:**
+
+* Monolithic designs that are hard to debug and maintain.
+* Tight coupling between modules reducing reusability.
+* Lack of clear interfaces between modules.
+
+**Improvement Suggestions:**
+
+* Design with modularity in mind, separating concerns.
+* Define clear and standardized interfaces for module communication.
+* Use parameters to make modules configurable and reusable.
+
+---
+
+## 🧠 6. Handling Ambiguity & Prompt Interpretation
+
+**Prompt Example:**
+
+> *"Design a clock domain crossing mechanism for transferring data between asynchronous clock domains."*
+
+**What to Evaluate:**
+
+* **Clarifying Questions:** Does the AI ask for more details if the prompt is ambiguous?
+* **Assumptions:** Does it make safe and standard assumptions in the absence of complete information?
+* **Design Choices:** Are the chosen mechanisms (e.g., synchronizers, FIFOs) appropriate for the scenario?
+
+**Potential Issues:**
+
+* Proceeding with design without clarifying ambiguities, leading to incorrect implementations.
+* Choosing inappropriate synchronization mechanisms.([arXiv][4])
+
+**Improvement Suggestions:**
+
+* Train the AI to seek clarification when prompts are ambiguous.
+* Implement default design choices based on best practices when information is missing.
+
+---
+
+## 📊 7. Evaluation Metrics & Continuous Improvement
+
+**Prompt Example:**
+
+> *"Analyze the following Verilog code for potential issues and suggest improvements."*
+
+**What to Evaluate:**
+
+* **Self-Assessment:** Can the AI identify its own mistakes or suboptimal code?
+* **Feedback Incorporation:** Does it learn from previous corrections to avoid repeating mistakes?
+* **Metric Reporting:** Does it provide metrics like code coverage, timing reports, or resource utilization?
+
+**Potential Issues:**
+
+* Inability to recognize and learn from past errors.
+* Lack of quantitative metrics to assess code quality.
+
+**Improvement Suggestions:**
+
+* Implement mechanisms for self-evaluation and iterative improvement.
+* Integrate with simulation and synthesis tools to gather and report metrics.
+
+---
+
+By systematically crafting prompts that target these areas, you can effectively assess the AI chatbot's capabilities and identify specific areas for enhancement. This approach not only aids in refining the AI's performance but also ensures that the generated Verilog code meets industry standards for functionality, efficiency, and reliability.
+
+[1]: https://arxiv.org/html/2407.10424v2?utm_source=chatgpt.com "CodeV: Empowering LLMs for Verilog Generation through Multi-Level Summarization"
+[2]: https://www.reddit.com/r/vlsi_enthusiast/comments/14vptaq?utm_source=chatgpt.com "Verilog 101: Avoid These Common Mistakes When Learning Hardware Description Language"
+[3]: https://www.reddit.com/r/FPGA/comments/157o5r0?utm_source=chatgpt.com "Why are AI models so bad at writing VHDL/Verilog code?"
+[4]: https://arxiv.org/abs/2504.15804?utm_source=chatgpt.com "Insights from Verification: Training a Verilog Generation LLM with Reinforcement Learning with Testbench Feedback"

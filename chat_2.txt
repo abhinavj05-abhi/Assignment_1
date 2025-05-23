@@ -1,0 +1,142 @@
+Here’s a structured approach you can use to probe and stress-test your in-house AI Verilog assistant. For each category you’ll find:
+
+1. **What to ask** (example prompt)
+2. **What to look for** in its answer
+3. **How to score or improve** its behavior
+
+---
+
+## 1. Functional Correctness
+
+| Prompt Example                                                                                                                                            | What to Look For                                                      | Suggested Improvement |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------- |
+| “Generate a **parameterized**, synthesizable Verilog module for an N-bit asynchronous FIFO with Gray-code read/write pointers. Include full/empty flags.” | • Does it correctly implement pointer logic (binary→Gray conversion)? |                       |
+| • Are pointers synchronized to the opposite clock domain?                                                                                                 |                                                                       |                       |
+| • Does it generate real hardware latches or inferred latches by accident?                                                                                 | • Ask for an RTL simulation waveform.                                 |                       |
+| • Insist on an assertion-based testbench (SVAs) to catch full/empty misdetects.                                                                           |                                                                       |                       |
+| • Require lint tools (like Yosys/Surelog) pass.                                                                                                           |                                                                       |                       |
+
+---
+
+## 2. Coding Style & Readability
+
+**Prompt:**
+
+> “Refactor this Verilog snippet to eliminate inferred latches, use two-space indentation, consistent CamelCase for signals, and add meaningful comments.”
+
+* **Check:**
+
+  * Are signal names transformed uniformly?
+  * Are inferred-latch conditions removed (e.g. default case in `case` statements)?
+  * Are comments actually explaining “why” not just “what”?
+* **Improve by:**
+
+  * Providing the AI with your company’s coding-style guide (a `.vscode/settings.json` or `.clang-format` for Verilog).
+  * Asking it to run a tool-integration step (e.g. “Show lint warnings before and after.”).
+
+---
+
+## 3. Corner-Case & Robustness
+
+| Prompt Example                                                                                                                                          | What to Look For                                                | Suggested Improvement |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------- |
+| “Create a UART receiver FSM that correctly handles framing errors, baud-rate mismatches, and idle-line extensions. Provide tests for start-bit jitter.” | • Does it detect framing and parity errors?                     |                       |
+| • Are timers adequately parameterized?                                                                                                                  |                                                                 |                       |
+| • Does the testbench inject start-bit jitter and mismatched clocks?                                                                                     | • Ask for randomized constrained-random tests in SystemVerilog. |                       |
+| • Require coverage goals (e.g., “Achieve >90% FSM coverage.”).                                                                                          |                                                                 |                       |
+
+---
+
+## 4. Performance & Resource Usage
+
+**Prompt:**
+
+> “Optimize this FIR filter RTL to minimize DSP-slice usage and meet a 200 MHz clock at 28 nm. Include RTL floorplanning constraints.”
+
+* **Check:**
+
+  * Does it pipeline multiply-accumulates?
+  * Are resource-sharing or CSD (Canonic Signed Digit) multipliers used?
+  * Does it supply SDC (Synopsys Design Constraints)?
+* **Improve by:**
+
+  * Pushing it to produce an area/timing report (post-synthesis estimates).
+  * Asking for power-aware coding styles (clock-gating insertion).
+
+---
+
+## 5. Verification & Testbench Quality
+
+| Prompt Example                                                                                                                              | What to Look For                                  | Suggested Improvement |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------- |
+| “Write a SystemVerilog UVM environment for testing a dual-port BRAM controller. Include scoreboard, coverage, and back-pressure scenarios.” | • Is there a sequencer/driver/monitor/scoreboard? |                       |
+| • Are coverage bins defined (functional & code)?                                                                                            |                                                   |                       |
+| • Does it handle back-pressure?                                                                                                             | • Insist on coverage closure reports.             |                       |
+| • Ask the assistant to integrate with CI (e.g. run Questa/Incisive).                                                                        |                                                   |                       |
+
+---
+
+## 6. Formal & Static Analysis
+
+**Prompt:**
+
+> “Generate an SVA property to prove that ‘the read pointer never overtakes the write pointer’ in my FIFO. Then show how to run a formal check.”
+
+* **Check:**
+
+  * Is the property correctly scoped?
+  * Does it guard against X-propagation?
+  * Are cover directives included?
+* **Improve by:**
+
+  * Requiring the AI to call a tool (e.g. JasperGold, OneSpin) and interpret its pass/fail logs.
+  * Asking for counter-example waveforms if a proof fails.
+
+---
+
+## 7. Ambiguity & Mis-Specification Handling
+
+**Prompt:**
+
+> “I haven’t told you the exact clock relationships—adapt your design to work whether the two domains are asynchronous or phase-aligned.”
+
+* **Check:**
+
+  * Does it ask clarifying questions?
+  * Does it default to safe CDC (two-flop synchronizers, FIFOs)?
+* **Improve by:**
+
+  * Encouraging the assistant to detect incomplete specs and explicitly request missing parameters.
+
+---
+
+### Scoring & Feedback Loop
+
+1. **Assign a rubric** per category (Correctness, Style, Robustness, Performance, Verification, Formal): 1–5 scale.
+2. **Feed its output back** into itself:
+
+   * “Analyze your own Verilog and highlight any inferred latches.”
+   * “Suggest three improvements to your own testbench coverage.”
+3. **Automate metric extraction** (e.g., coverage percentage, lint errors) and compare across runs.
+
+---
+
+### Summary of “Meta-Prompts” to Drive Better AI Behavior
+
+1. **“Show your reasoning.”**
+
+   * E.g. “Before giving me code, outline the FSM states and pointer arithmetic in plain English.”
+2. **“Run static checks.”**
+
+   * E.g. “Run Yosys lint and report warnings.”
+3. **“Generate self-tests.”**
+
+   * E.g. “Produce a self-checking testbench using SystemVerilog assertions.”
+4. **“Explain trade-offs.”**
+
+   * E.g. “Compare two implementations (pipelined vs. non-pipelined) in terms of latency and area.”
+5. **“Propose next steps.”**
+
+   * E.g. “What would you add to improve power efficiency?”
+
+By mixing **challenging**, **open-ended**, and **tool-driven** prompts you’ll reveal gaps in the AI’s understanding, push it to expose its internal checks, and surface areas for real improvement.
