@@ -1,0 +1,105 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+
+def load_rules_from_excel_by_standard(file_path):
+    df = pd.read_excel(file_path, sheet_name=0)
+    df = df.fillna('')
+    rule_dict = {}
+    standards = df.columns[1:]  # Skip the first column which has variable names
+
+    for standard in standards:
+        rule_dict[standard] = {}
+        for _, row in df.iterrows():
+            param = row[df.columns[0]]
+            values = row[standard]
+            if isinstance(values, str) and values.strip() == '':
+                continue  # Skip empty entries
+            try:
+                allowed = list(map(int, str(values).split(',')))
+            except ValueError:
+                continue  # Skip if conversion fails
+            rule_dict[standard][param] = allowed
+    return rule_dict, list(standards)
+
+def generate_sv_code(selected_stds, param_filters, rules_dict):
+    sv_lines = []
+    for std in selected_stds:
+        if std not in rules_dict:
+            continue
+        sv_lines.append(f"// Coverage for {std}")
+        sv_lines.append(f"covergroup cov_{std.replace(' ', '_')} @trigger_{std.replace(' ', '_')}_cov;")
+        rules = rules_dict[std]
+        for param in param_filters:
+            if param in rules:
+                allowed_vals = rules[param]
+                bin_vals = ', '.join(map(str, allowed_vals))
+                sv_lines.append(f"  {param}: coverpoint {param} {{ bins {param}_bins[] = {{{bin_vals}}}; }}")
+        sv_lines.append("endgroup\n")
+    return '\n'.join(sv_lines)
+
+def on_generate():
+    selected_stds = [s for s, v in std_vars.items() if v.get()]
+    selected_params = [p for p, v in param_vars.items() if v.get()]
+    if not selected_stds or not selected_params:
+        messagebox.showerror("Error", "Please select both standards and parameters.")
+        return
+
+    if not excel_path.get():
+        messagebox.showerror("Error", "Please select an Excel file.")
+        return
+    rules_dict, available_stds = load_rules_from_excel_by_standard(excel_path.get())
+
+    sv_code = generate_sv_code(selected_stds, selected_params, rules_dict)
+    output_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+    if output_path:
+        with open(output_path, "w") as f:
+            f.write(sv_code)
+        messagebox.showinfo("Success", f"Coverage file saved to:\n{output_path}")
+
+def browse_excel():
+    path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx *.xls")])
+    if path:
+        excel_path.set(path)
+        rules_dict, available_stds = load_rules_from_excel_by_standard(path)
+        # Update standard selection checkboxes
+        for widget in std_frame.winfo_children():
+            widget.destroy()
+        for std in available_stds:
+            var = tk.BooleanVar()
+            chk = tk.Checkbutton(std_frame, text=std, variable=var)
+            chk.pack(anchor='w')
+            std_vars[std] = var
+
+# ------------------- GUI -------------------
+root = tk.Tk()
+root.title("WiFi Functional Coverage Generator")
+
+# Standard and Parameter Selection
+tk.Label(root, text="Select Parameters:").grid(row=0, column=0, sticky='w')
+param_frame = tk.Frame(root)
+param_frame.grid(row=1, column=0, sticky='w')
+param_vars = {}
+params = ["chan_bw_mode", "osr_mode", "downclock_mode", "gi_ltf_size", "snr_db", "stbc"]
+for param in params:
+    var = tk.BooleanVar()
+    chk = tk.Checkbutton(param_frame, text=param, variable=var)
+    chk.pack(anchor='w')
+    param_vars[param] = var
+
+# Standards list gets populated after Excel load
+tk.Label(root, text="Select Standards:").grid(row=0, column=1, sticky='w')
+std_frame = tk.Frame(root)
+std_frame.grid(row=1, column=1, sticky='w')
+std_vars = {}
+
+# Excel file selection
+tk.Label(root, text="Excel File:").grid(row=2, column=0, sticky='w')
+excel_path = tk.StringVar()
+tk.Entry(root, textvariable=excel_path, width=50).grid(row=2, column=1, sticky='w')
+tk.Button(root, text="Browse", command=browse_excel).grid(row=2, column=2, sticky='w')
+
+# Generate Button
+tk.Button(root, text="Generate SV File", command=on_generate, bg='lightgreen').grid(row=3, column=0, columnspan=3, pady=10)
+
+root.mainloop()

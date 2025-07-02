@@ -1,0 +1,128 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+
+def load_generation_data(file_path):
+    df = pd.read_excel(file_path, sheet_name=0)
+    df = df.fillna('')
+    rule_dict = {}
+    standards = df.columns[1:]  # Skip the first column which is parameter name
+
+    for standard in standards:
+        rule_dict[standard] = {'params': {}, 'crosses': []}
+        for _, row in df.iterrows():
+            param = row[df.columns[0]].strip()
+            values = row[standard]
+            if param.lower() == 'cross':
+                # Store cross coverpoint combinations as tuples
+                crosses = [tuple(map(str.strip, item.split('&'))) for item in str(values).split(';') if item.strip()]
+                rule_dict[standard]['crosses'].extend(crosses)
+            elif isinstance(values, str) and values.strip() != '':
+                try:
+                    allowed = list(map(int, values.split(',')))
+                    rule_dict[standard]['params'][param] = allowed
+                except ValueError:
+                    continue
+    return rule_dict, list(standards)
+
+def generate_sv_code(selected_stds, spec_filters, generation_data):
+    sv_lines = []
+    for std in selected_stds:
+        if std not in generation_data:
+            continue
+        sv_lines.append(f"// Coverage for {std}")
+        sv_lines.append(f"covergroup cov_{std.replace(' ', '_')} @trigger_{std.replace(' ', '_')}_cov;")
+        rules = generation_data[std]['params']
+        for param, required_vals in spec_filters.items():
+            if param in rules:
+                intersection = list(set(required_vals).intersection(set(rules[param])))
+                if intersection:
+                    bin_vals = ', '.join(map(str, sorted(intersection)))
+                    sv_lines.append(f"  {param}: coverpoint {param} {{ bins {param}_bins[] = {{{bin_vals}}}; }}")
+        # Handle cross coverage
+        crosses = generation_data[std]['crosses']
+        for cross_items in crosses:
+            if all(p in rules for p in cross_items):
+                cross_name = '_x_'.join(cross_items)
+                cross_expr = ', '.join(cross_items)
+                sv_lines.append(f"  cross {cross_expr};")
+        sv_lines.append("endgroup\n")
+    return '\n'.join(sv_lines)
+
+def on_generate():
+    selected_stds = [s for s, v in std_vars.items() if v.get()]
+    selected_specs = {p: v.get().strip() for p, v in spec_entries.items() if v.get().strip()}
+
+    if not selected_stds or not selected_specs:
+        messagebox.showerror("Error", "Please select standards and specify filter values.")
+        return
+
+    if not excel_path.get():
+        messagebox.showerror("Error", "Please select the generation Excel file.")
+        return
+
+    try:
+        spec_filters = {
+            param: list(map(int, spec.split(','))) for param, spec in selected_specs.items()
+        }
+    except ValueError:
+        messagebox.showerror("Error", "Invalid format in filter values. Use comma-separated numbers.")
+        return
+
+    generation_data, _ = load_generation_data(excel_path.get())
+    sv_code = generate_sv_code(selected_stds, spec_filters, generation_data)
+
+    output_path = filedialog.asksaveasfilename(defaultextension=".sv", filetypes=[("SystemVerilog Files", "*.sv")])
+    if output_path:
+        with open(output_path, "w") as f:
+            f.write(sv_code)
+        messagebox.showinfo("Success", f"Functional coverage code saved to:\n{output_path}")
+
+def browse_excel():
+    path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx *.xls")])
+    if path:
+        excel_path.set(path)
+        generation_data, available_stds = load_generation_data(path)
+        for widget in std_frame.winfo_children():
+            widget.destroy()
+        std_vars.clear()
+        for std in available_stds:
+            var = tk.BooleanVar()
+            chk = tk.Checkbutton(std_frame, text=std, variable=var)
+            chk.pack(anchor='w')
+            std_vars[std] = var
+
+# GUI Setup
+root = tk.Tk()
+root.title("WiFi Functional Coverage Generator")
+
+# Specification Filters
+tk.Label(root, text="Specify Filters (comma-separated values):").grid(row=0, column=0, sticky='w')
+spec_frame = tk.Frame(root)
+spec_frame.grid(row=1, column=0, sticky='w')
+spec_entries = {}
+params = ["chan_bw_mode", "osr_mode", "downclock_mode", "gi_ltf_size", "snr_db", "stbc"]
+for param in params:
+    row = tk.Frame(spec_frame)
+    row.pack(fill='x')
+    tk.Label(row, text=param, width=18, anchor='w').pack(side='left')
+    entry = tk.Entry(row, width=30)
+    entry.pack(side='left')
+    spec_entries[param] = entry
+
+# Standards list
+tk.Label(root, text="Select Standards:").grid(row=0, column=1, sticky='w')
+std_frame = tk.Frame(root)
+std_frame.grid(row=1, column=1, sticky='w')
+std_vars = {}
+
+# Excel file selection
+tk.Label(root, text="Excel File (generation capabilities & cross):").grid(row=2, column=0, sticky='w')
+excel_path = tk.StringVar()
+tk.Entry(root, textvariable=excel_path, width=50).grid(row=2, column=1, sticky='w')
+tk.Button(root, text="Browse", command=browse_excel).grid(row=2, column=2, sticky='w')
+
+# Generate Button
+tk.Button(root, text="Generate SV File", command=on_generate, bg='lightgreen').grid(row=3, column=0, columnspan=3, pady=10)
+
+root.mainloop()

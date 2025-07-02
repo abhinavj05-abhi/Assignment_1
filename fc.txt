@@ -1,0 +1,113 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+
+# Sample hardcoded generation-specific allowed bins (Variation 1)
+GENERATION_RULES = {
+    "11b": {
+        "chan_bw_mode": [20, 40],
+        "osr_mode": [0],
+    },
+    "11n": {
+        "chan_bw_mode": [20, 40],
+        "osr_mode": [0, 1],
+    },
+    "11ax": {
+        "chan_bw_mode": [20, 80],
+        "osr_mode": [1],
+    },
+}
+
+def load_rules_from_excel(file_path):
+    """Reads coverage rule constraints from an Excel file"""
+    df = pd.read_excel(file_path)
+    rule_dict = {}
+    for _, row in df.iterrows():
+        gen = row['generation']
+        param = row['parameter']
+        allowed = list(map(int, str(row['allowed_values']).split(',')))
+        if gen not in rule_dict:
+            rule_dict[gen] = {}
+        rule_dict[gen][param] = allowed
+    return rule_dict
+
+def generate_sv_code(selected_gens, param_filters, rules_dict):
+    sv_lines = []
+    for gen in selected_gens:
+        if gen not in rules_dict:
+            continue
+        sv_lines.append(f"// Coverage for {gen}")
+        sv_lines.append(f"covergroup cov_{gen} @trigger_{gen}_cov;")
+        rules = rules_dict[gen]
+        for param in param_filters:
+            if param in rules:
+                allowed_vals = rules[param]
+                bin_vals = ', '.join(map(str, allowed_vals))
+                sv_lines.append(f"  coverpoint {param} {{ bins {param}_bins[] = {{{bin_vals}}}; }}")
+        sv_lines.append("endgroup\n")
+    return '\\n'.join(sv_lines)
+
+def on_generate():
+    selected_gens = [g for g, v in gen_vars.items() if v.get()]
+    selected_params = [p for p, v in param_vars.items() if v.get()]
+    if not selected_gens or not selected_params:
+        messagebox.showerror("Error", "Please select both generations and parameters.")
+        return
+
+    # Load rules
+    if mode_var.get() == "Excel":
+        if not excel_path.get():
+            messagebox.showerror("Error", "Please select an Excel file.")
+            return
+        rules_dict = load_rules_from_excel(excel_path.get())
+    else:
+        rules_dict = GENERATION_RULES
+
+    # Generate SV code
+    sv_code = generate_sv_code(selected_gens, selected_params, rules_dict)
+    output_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+    if output_path:
+        with open(output_path, "w") as f:
+            f.write(sv_code)
+        messagebox.showinfo("Success", f"Coverage file saved to:\n{output_path}")
+
+def browse_excel():
+    path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx *.xls")])
+    if path:
+        excel_path.set(path)
+
+# ------------------- GUI -------------------
+root = tk.Tk()
+root.title("WiFi Functional Coverage Generator")
+
+tk.Label(root, text="Select Generations:").grid(row=0, column=0, sticky='w')
+gen_vars = {}
+for i, gen in enumerate(["11b", "11n", "11ax"]):
+    var = tk.BooleanVar()
+    chk = tk.Checkbutton(root, text=gen, variable=var)
+    chk.grid(row=i+1, column=0, sticky='w')
+    gen_vars[gen] = var
+
+tk.Label(root, text="Select Parameters:").grid(row=0, column=1, sticky='w')
+param_vars = {}
+params = ["chan_bw_mode", "osr_mode", "downclock_mode", "gi_ltf_size"]
+for i, param in enumerate(params):
+    var = tk.BooleanVar()
+    chk = tk.Checkbutton(root, text=param, variable=var)
+    chk.grid(row=i+1, column=1, sticky='w')
+    param_vars[param] = var
+
+# Mode selection
+tk.Label(root, text="Rule Source:").grid(row=6, column=0, sticky='w')
+mode_var = tk.StringVar(value="Hardcoded")
+tk.Radiobutton(root, text="Hardcoded", variable=mode_var, value="Hardcoded").grid(row=7, column=0, sticky='w')
+tk.Radiobutton(root, text="Excel", variable=mode_var, value="Excel").grid(row=8, column=0, sticky='w')
+
+excel_path = tk.StringVar()
+tk.Entry(root, textvariable=excel_path, width=40).grid(row=7, column=1, sticky='w')
+tk.Button(root, text="Browse Excel", command=browse_excel).grid(row=8, column=1, sticky='w')
+
+# Generate Button
+tk.Button(root, text="Generate SV File", command=on_generate, bg='lightgreen').grid(row=9, column=0, columnspan=2, pady=10)
+
+root.mainloop()
