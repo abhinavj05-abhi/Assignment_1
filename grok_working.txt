@@ -1,0 +1,244 @@
+import pandas as pd
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+# Parse allowed values from Excel cell strings
+def parse_allowed_values(s):
+    if pd.isna(s):
+        return []
+    s = str(s).strip()
+    parts = [part.strip() for part in s.split(",") if part.strip()]
+    result = []
+    for part in parts:
+        if part.startswith("[") and part.endswith("]") and ":" in part:
+            range_str = part[1:-1]
+            a, b = range_str.split(":")
+            a = int(a) if a != "$" else float('-inf')
+            b = int(b) if b != "$" and b != "∞" else float('inf')
+            result.append(("range", (a, b)))
+        else:
+            try:
+                value = int(part)
+                result.append(("value", value))
+            except ValueError:
+                continue
+    return result
+
+# Parse user input (range or comma-separated, supporting multiple ranges)
+def parse_user_input(s):
+    s = s.strip()
+    if not s:
+        return None
+    parts = [part.strip() for part in s.split(",") if part.strip()]
+    ranges = []
+    values = []
+    for part in parts:
+        if part.startswith("[") and part.endswith("]") and ":" in part:
+            range_str = part[1:-1]
+            try:
+                a, b = map(int, range_str.split(":"))
+                ranges.append((a, b))
+            except ValueError:
+                return None
+        else:
+            try:
+                values.extend([int(v.strip()) for v in part.split() if v.strip()])
+            except ValueError:
+                return None
+    if ranges and values:
+        return {"type": "mixed", "ranges": ranges, "values": values}
+    elif ranges:
+        return {"type": "range", "ranges": ranges}
+    elif values:
+        return {"type": "list", "values": values}
+    return None
+
+# Get maximum allowed range or values for feedback
+def get_max_allowed_range(param, allowed_values):
+    ranges = []
+    values = []
+    for gen in allowed_values:
+        for item_type, item in allowed_values[gen].get(param, []):
+            if item_type == "range":
+                ranges.append(item)
+            elif item_type == "value":
+                values.append(item)
+    if ranges:
+        min_val = min(a for a, _ in ranges if a != float('-inf'))
+        max_val = max(b for _, b in ranges if b != float('inf'))
+        return f"[{min_val}:{max_val}] or {','.join(map(str, values)) if values else 'no discrete values'}"
+    elif values:
+        return ",".join(map(str, sorted(values)))
+    return "No valid data"
+
+# Check if input is allowed
+def is_input_allowed(input_data, allowed):
+    if input_data["type"] == "range":
+        for min_val, max_val in input_data["ranges"]:
+            for item_type, item in allowed:
+                if item_type == "range":
+                    a, b = item
+                    if a <= min_val and max_val <= b:
+                        break
+                else:
+                    return False
+            else:
+                return False
+        return True
+    elif input_data["type"] == "mixed":
+        for min_val, max_val in input_data["ranges"]:
+            for item_type, item in allowed:
+                if item_type == "range":
+                    a, b = item
+                    if a <= min_val and max_val <= b:
+                        break
+                else:
+                    return False
+            else:
+                return False
+        for v in input_data["values"]:
+            allowed_v = False
+            for item_type, item in allowed:
+                if item_type == "range" and item[0] <= v <= item[1]:
+                    allowed_v = True
+                    break
+                elif item_type == "value" and item == v:
+                    allowed_v = True
+                    break
+            if not allowed_v:
+                return False
+        return True
+    else:  # list
+        values = input_data["values"]
+        for v in values:
+            allowed_v = False
+            for item_type, item in allowed:
+                if item_type == "range" and item[0] <= v <= item[1]:
+                    allowed_v = True
+                    break
+                elif item_type == "value" and item == v:
+                    allowed_v = True
+                    break
+            if not allowed_v:
+                return False
+        return True
+
+# Read Excel file
+df = pd.read_excel("data_fc.xlsx", sheet_name="Sheet1")
+parameters = df["Parameters"].tolist()
+generations = df.columns[1:]
+
+# Parse allowed values
+allowed_values = {gen: {param: parse_allowed_values(df.loc[df["Parameters"] == param, gen].iloc[0]) 
+                       for param in parameters} for gen in generations}
+
+# Create GUI
+root = tk.Tk()
+root.title("WiFi Functional Coverage Generator")
+root.geometry("600x700")
+
+canvas = tk.Canvas(root)
+scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+scrollable_frame = ttk.Frame(canvas)
+scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+entries = {}
+labels = {}
+tooltips = {}
+
+for i, param in enumerate(parameters):
+    label = ttk.Label(scrollable_frame, text=f"{param}:")
+    label.grid(row=i, column=0, padx=5, pady=5, sticky="e")
+    entry = ttk.Entry(scrollable_frame)
+    entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
+    entries[param] = entry
+    labels[param] = label
+    tooltip = ttk.Label(scrollable_frame, text="", foreground="red")
+    tooltip.grid(row=i, column=2, padx=5, pady=5, sticky="w")
+    tooltips[param] = tooltip
+
+def validate_and_generate():
+    inputs = {}
+    invalid_params = {}
+    # Collect inputs and reset GUI styles
+    for param, entry in entries.items():
+        val = entry.get().strip()
+        if val:
+            parsed = parse_user_input(val)
+            if parsed is None:
+                invalid_params[param] = "Invalid format"
+            else:
+                inputs[param] = parsed
+        entry.configure(background="white")
+        labels[param].configure(foreground="black")
+        tooltips[param].configure(text="")
+
+    # Validate inputs
+    for param, input_data in inputs.items():
+        allowed_anywhere = False
+        for gen in generations:
+            if is_input_allowed(input_data, allowed_values[gen].get(param, [])):
+                allowed_anywhere = True
+                break
+        if not allowed_anywhere:
+            invalid_params[param] = get_max_allowed_range(param, allowed_values)
+
+    # Highlight invalid inputs
+    if invalid_params:
+        for param, msg in invalid_params.items():
+            entries[param].configure(background="pink")
+            labels[param].configure(foreground="red")
+            tooltips[param].configure(text=msg)
+        messagebox.showerror("Error", "Correct the highlighted fields.")
+        return
+
+    # Generate SystemVerilog code
+    code = ""
+    for gen in generations:
+        coverpoints = []
+        for param, input_data in inputs.items():
+            allowed = allowed_values[gen].get(param, [])
+            if not is_input_allowed(input_data, allowed):
+                continue
+            if input_data["type"] in ["range", "mixed"]:
+                bins = []
+                if param == "packet_length":
+                    for i, (item_type, item) in enumerate(allowed):
+                        bin_name = f"v{i+1}_{param}"
+                        if item_type == "range":
+                            a, b = item
+                            if b == float('inf'):
+                                b = max([max_val for _, max_val in input_data.get("ranges", [(0, 0)])] + [a + 1000])
+                            for min_val, max_val in input_data.get("ranges", []):
+                                if a <= max_val and min_val <= b:
+                                    intersect_min = max(a, min_val)
+                                    intersect_max = min(b, max_val)
+                                    bins.append(f"    bins {bin_name} = {{[{intersect_min}:{intersect_max}]}};")
+                        elif item_type == "value" and any(min_val <= item <= max_val for min_val, max_val in input_data.get("ranges", [(item, item)])):
+                            bins.append(f"    bins {bin_name} = {{{item}}};")
+                    if bins:
+                        coverpoints.append(f"  cov_{param}: coverpoint {param} {{\n" + ";\n".join(bins) + "\n  }}")
+                else:
+                    for i, (min_val, max_val) in enumerate(input_data.get("ranges", [])):
+                        bin_name = f"{param}" if i == 0 else f"{param}_{i+1}"
+                        coverpoints.append(f"  cov_{param}: coverpoint {param} {{ bins {bin_name} = {{[{min_val}:{max_val}]}}; }}")
+            else:  # list
+                values = input_data["values"]
+                coverpoints.append(f"  cov_{param}: coverpoint {param} {{ bins {param}[] = {{{','.join(map(str, values))}}}; }}")
+        if coverpoints:
+            code += f"// {gen} covergroup\ncovergroup cg_{gen.replace(' ', '_')};\n" + "\n".join(coverpoints) + "\nendgroup\n"
+            code += f"cg_{gen.replace(' ', '_')} u_cg_{gen.replace(' ', '_')} = new();\n\n"
+
+    # Write to file
+    with open("coverage_model.sv", "w") as f:
+        f.write(code)
+    messagebox.showinfo("Success", "Generated coverage_model.sv")
+
+generate_btn = ttk.Button(scrollable_frame, text="Generate Functional Coverage", command=validate_and_generate)
+generate_btn.grid(row=len(parameters), column=0, columnspan=2, pady=10)
+
+root.mainloop()

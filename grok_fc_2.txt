@@ -1,0 +1,202 @@
+import pandas as pd
+import tkinter as tk
+from tkinter import ttk, messagebox
+from tkinter import scrolledtext
+
+# Function to parse allowed values from Excel cell strings
+def parse_allowed_values(s):
+    if pd.isna(s):
+        return []
+    # Ensure s is a string
+    s = str(s)
+    parts = s.split(",")
+    result = []
+    for part in parts:
+        part = part.strip()
+        if part.startswith("[") and part.endswith("]"):
+            range_str = part[1:-1]
+            a, b = range_str.split(":")
+            try:
+                a = int(a)
+            except ValueError:
+                a = float('-inf') if a == "$" else a
+            b = int(b) if b != "$" else float('inf')
+            result.append((a, b))
+        else:
+            try:
+                value = int(part)
+                result.append(value)
+            except ValueError:
+                result.append(part)
+    return result
+
+# Function to parse user input (range or comma-separated)
+def parse_user_input(s):
+    if not s.strip():
+        return []
+    parts = s.split(",")
+    result = []
+    for part in parts:
+        part = part.strip()
+        if part.startswith("[") and part.endswith("]"):
+            range_str = part[1:-1]
+            a, b = range_str.split(":")
+            try:
+                a = int(a)
+                b = int(b)
+                result.extend(range(a, b + 1))
+            except ValueError:
+                result.append(part)
+        else:
+            try:
+                values = [int(x) for x in part.split()]
+                result.extend(values)
+            except ValueError:
+                result.append(part)
+    return sorted(list(set(result)))  # Remove duplicates and sort
+
+# Function to check if a range is fully allowed in a list of allowed values/ranges
+def is_range_allowed(range_vals, allowed):
+    for val in range_vals:
+        try:
+            val_num = int(val)
+        except ValueError:
+            val_num = None
+        allowed_flag = False
+        for item in allowed:
+            if isinstance(item, tuple):
+                if val_num is not None:
+                    a, b = item
+                    if a <= val_num <= b:
+                        allowed_flag = True
+                        break
+            elif item == val or (val_num is not None and item == val_num):
+                allowed_flag = True
+                break
+        if not allowed_flag:
+            return False
+    return True
+
+# Function to get maximum allowed range across all generations
+def get_max_allowed_range(param, allowed_values):
+    max_range = []
+    for gen in allowed_values:
+        for item in allowed_values[gen].get(param, []):
+            if isinstance(item, tuple):
+                a, b = item
+                max_range.append((a, b))
+    if max_range:
+        min_val = min(a for a, _ in max_range if a != float('-inf'))
+        max_val = max(b for _, b in max_range if b != float('inf'))
+        return f"[{min_val}:{max_val}]" if min_val <= max_val else "No valid range"
+    return "No valid range"
+
+# Read Excel file
+df = pd.read_excel("data_fc.xlsx", sheet_name="Sheet1")
+parameters = df["Parameters"].tolist()
+generations = df.columns[1:]
+
+# Parse allowed values into a dictionary
+allowed_values = {gen: {} for gen in generations}
+for i, param in enumerate(parameters):
+    for j, gen in enumerate(generations):
+        cell = df.iloc[i, j + 1]
+        if pd.notna(cell):
+            allowed_values[gen][param] = parse_allowed_values(cell)
+        else:
+            allowed_values[gen][param] = []
+
+# Create GUI
+root = tk.Tk()
+root.title("WiFi Functional Coverage Generator")
+root.geometry("600x700")
+
+# Scrollable frame setup
+canvas = tk.Canvas(root)
+scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+scrollable_frame = ttk.Frame(canvas)
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.pack(side="right", fill="y"))
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+# Store entries and labels for validation
+entries = {}
+labels = {}
+tooltips = {}
+
+# Create input fields
+for i, param in enumerate(parameters):
+    label = ttk.Label(scrollable_frame, text=f"{param}:")
+    label.grid(row=i, column=0, padx=5, pady=5, sticky="e")
+    entry = ttk.Entry(scrollable_frame)
+    entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
+    entries[param] = entry
+    labels[param] = label
+    # Tooltip for allowed values (initially empty)
+    tooltip = ttk.Label(scrollable_frame, text="", foreground="red")
+    tooltip.grid(row=i, column=2, padx=5, pady=5, sticky="w")
+    tooltips[param] = tooltip
+
+def validate_and_generate():
+    inputs = {}
+    invalid_params = {}
+    # Collect inputs and reset GUI styles
+    for param, entry in entries.items():
+        val = entry.get().strip()
+        if val:
+            inputs[param] = parse_user_input(val)
+        entry.configure(background="white")
+        labels[param].configure(foreground="black")
+        tooltips[param].configure(text="")
+
+    # Validate inputs
+    for param, vals in inputs.items():
+        allowed_anywhere = False
+        for gen in generations:
+            if is_range_allowed(vals, allowed_values[gen].get(param, [])):
+                allowed_anywhere = True
+                break
+        if not allowed_anywhere:
+            invalid_params[param] = get_max_allowed_range(param, allowed_values)
+
+    # Highlight invalid inputs
+    if invalid_params:
+        for param, allowed_range in invalid_params.items():
+            entries[param].configure(background="pink")
+            labels[param].configure(foreground="red")
+            tooltips[param].configure(text=f"Invalid. Suggested range: {allowed_range}")
+        messagebox.showerror("Validation Error", "Please correct the highlighted fields.")
+        return
+
+    # Generate SystemVerilog code
+    code = ""
+    for gen in generations:
+        coverpoints = []
+        for param, vals in inputs.items():
+            if is_range_allowed(vals, allowed_values[gen].get(param, [])):
+                if len(vals) > 1:
+                    coverpoints.append(f"  cov_{param}: coverpoint {param} {{ bins {param} [10] = {{[{min(vals)}: {max(vals)}]}}; }}")
+                else:
+                    coverpoints.append(f"  cov_{param}: coverpoint {param} {{ bins {param} = {{{vals[0]}}}; }}")
+        if coverpoints:
+            code += f"// {gen} covergroup\n"
+            code += f"covergroup cg_{gen.replace(' ', '_')};\n"
+            code += "\n".join(coverpoints) + "\n"
+            code += "endgroup\n"
+            code += f"cg_{gen.replace(' ', '_')} u_cg_{gen.replace(' ', '_')} = new();\n\n"
+
+    # Write to file
+    with open("coverage_model.sv", "w") as f:
+        f.write(code)
+    messagebox.showinfo("Success", "Coverage model generated in coverage_model.sv")
+
+# Add Generate button
+generate_btn = ttk.Button(scrollable_frame, text="Generate Functional Coverage", command=validate_and_generate)
+generate_btn.grid(row=len(parameters), column=0, columnspan=2, pady=10)
+
+root.mainloop()
